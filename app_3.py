@@ -7,7 +7,7 @@ from flask import Flask, jsonify
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.automap import automap_base
-from datetime import datetime as dt
+
 from datetime import datetime, timedelta
 import numpy as np
 #################################################
@@ -18,7 +18,6 @@ engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 # Declare a Base using "automap_base()"
 Base = automap_base()
 # reflect an existing database into a new model
-Base.prepare(autoload_with=engine)
 
 # reflect the tables
 Base.prepare(engine, reflect=True)
@@ -30,7 +29,10 @@ Station = Base.classes.station
 print("database connected")
 # Create our session (link) from Python to the DB
 session = Session(engine)
-
+#NOTE:
+#Best practice is to open and close session in each route.
+#Nonetheless I comply with assignment requirement 
+# I commented out each route  open and close
 #################################################
 # Flask Setup
 #################################################
@@ -59,18 +61,18 @@ def homepage():
 def precipitation():
     """Return the last year of precipitation data as JSON."""
     # Create a new session link from Python to the database
-   # session = Session(engine)
+    # session = Session(engine)
     
-    # Calculate the date 1 year ago from today (or the last date in the database)
+    # Calculate the date 1 year ago from  the last date in the database 
     last_date = session.query(func.max(Measurement.date)).scalar()
     last_date = datetime.strptime(last_date, '%Y-%m-%d')
     one_year_ago = last_date - timedelta(days=365)
     
-    # Perform a query to retrieve the data needed
+    # Perform a query to retrieve the dates needed
     results = session.query(Measurement.date, Measurement.prcp).\
               filter(Measurement.date >= one_year_ago).all()
     
-    # Convert the query results to a dictionary
+    # Convert the precipitation results to a dictionary
     precipitation_dict = {date: prcp for date, prcp in results}
     
     # Close the session
@@ -84,61 +86,60 @@ def precipitation():
 def stations():
     """Return a list of stations as JSON."""
     # Create a new session link from Python to the database
-    session = Session(engine)
+    # session = Session(engine)
 
     # Perform a query to retrieve the stations
     results = session.query(Station.station).all()
-
+   
     # Close the session
-    #session.close()
+    # session.close()
     
-    # Convert the query results to a list
+    # Convert the station results to a list
     stations_list = list(np.ravel(results))
 
     # Return the JSON list of stations
     return jsonify(stations_list)
+  
 
 #########  tobs  n###########################################################
-
 @app.route("/api/v1.0/tobs")
 def tobs():
     """Return the last year of temperature observations (tobs) for the most-active station."""
-    # Create a new session link from Python to the database
-    # session = Session(engine)
+    # Create a session link from Python to the database
+    ## session = Session(engine)
 
-    # Define the most active station ID
-    most_active_station_id = "USC00519281"
+    # Query to find the station with the most observations
+    most_active_station_id = session.query(Measurement.station)\
+        .group_by(Measurement.station)\
+        .order_by(func.count(Measurement.station).desc())\
+        .first()[0]
 
-    # Calculate the date 1 year ago from today
-    last_date = session.query(func.max(Measurement.date)).\
-                filter(Measurement.station == most_active_station_id).scalar()
-    last_date = datetime.strptime(last_date, '%Y-%m-%d')
-    one_year_ago = last_date - timedelta(days=365)
-    
-    # Perform a query to retrieve the temperature observations
-    results = session.query(Measurement.tobs).\
-              filter(Measurement.station == most_active_station_id).\
-              filter(Measurement.date >= one_year_ago).all()
+    # Calculate the date 1 year ago from the last data point for the most active station
+    last_date = session.query(func.max(Measurement.date))\
+        .filter(Measurement.station == most_active_station_id)\
+        .scalar()
+    one_year_ago = datetime.strptime(last_date, '%Y-%m-%d') - timedelta(days=365)
+
+    # Perform a query to retrieve the temperature observations for the most active station
+    results = session.query(Measurement.tobs)\
+        .filter(Measurement.station == most_active_station_id)\
+        .filter(Measurement.date >= one_year_ago)\
+        .all()
+
+    # Convert the results to a list of temperature observations
+    tobs_list = [temp.tobs for temp in results]
 
     # Close the session
-    #session.close()
-    
-    # Convert the query results to a list
-    tobs_list = list(np.ravel(results))
+    ##session.close()
 
-    # Return the JSON list of temperature observations
+    # Return the JSON list of temperature observations for the most active station
     return jsonify(tobs_list)
 
-
 ######### start date YYY-MM-DD  n###########################################################
-
-
-
-
 # Start route
 @app.route("/api/v1.0/<start>")
 def temp_stats_start(start):
-    # Establish a session
+    # Establish a session (best practise )
    # session = Session(engine)
     
     # Convert the start date to a proper datetime object
@@ -168,8 +169,6 @@ def temp_stats_start(start):
     return jsonify(stats)
 
 #########  start & end date YYYY-MM-DD/YYY-MM-DD  n###########################################################
-
-
 # Start/end route
 @app.route("/api/v1.0/<start>/<end>")
 def temp_stats_start_end(start, end):
@@ -194,7 +193,7 @@ def temp_stats_start_end(start, end):
     results = session.query(*sel).filter(Measurement.date >= start_date).filter(Measurement.date <= end_date).all()
     
     # Close the session to avoid leaks
-   #session.close()
+    #session.close()
     
     # Unpack the result and create a dictionary to store it
     min_temp, avg_temp, max_temp = results[0]
